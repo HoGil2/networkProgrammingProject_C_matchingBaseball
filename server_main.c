@@ -19,12 +19,11 @@ void* handle_clnt(void* arg);
 // needed for login
 bool login_view(void* arg);
 bool login(void* arg);
-bool rw_login_db(char* rw, char* id, int id_size, char* pw, int pw_size);
+int rw_login_db(char* rw, char* id, int id_size, char* pw, int pw_size);
 // needed for sign up
 bool sign_up(void* arg);
 
 bool remove_socket(void* arg);
-
 
 typedef struct UserController {
 	int userList[MAX_CLNT];
@@ -90,10 +89,10 @@ void error_handling(char* msg) {
 	exit(1);
 }
 
-void* handle_clnt(void* arg){
+void* handle_clnt(void* arg) {
 	int clnt_sock = *((int*)arg);
 
-	if(login_view(&clnt_sock) == true)
+	if (login_view(&clnt_sock) == true)
 		//main_view(clnt_sock);
 
 	return NULL;
@@ -101,9 +100,9 @@ void* handle_clnt(void* arg){
 
 bool login_view(void* arg) {
 	int clnt_sock = *((int*)arg);
-	char msg[][BUF_SIZE] = { "=== 메   뉴 ===\n1. 로그인\n2. 계정 생성\n3. 종   료\n메뉴를 선택해주세요 (1-3) ? "
-		, "보기를 입력해주세요. (1-3) ? " };
-	char answer[30];
+	char msg[][BUF_SIZE] = { "\n=== 메   뉴 ===\n", "1. 로그인\n2. 계정 생성\n3. 종   료\n메뉴를 선택해주세요 (1-3). ? "
+		, "보기 중 입력해주세요. (1-3) ? ", "연결이 종료되었습니다.\n" };
+	char answer;
 	bool login_result = false;
 	bool sign_up_result = false;
 	int str_len;
@@ -111,27 +110,27 @@ bool login_view(void* arg) {
 
 	while (true) {
 		str_len = write(clnt_sock, msg[0], sizeof(msg[0]));
+		str_len = write(clnt_sock, msg[1], sizeof(msg[1]));
 		//if(str_len) // 로그 처리 위함?
+		str_len = read(clnt_sock, &answer, sizeof(&answer));
+		//if(str_len) // 로그 처리?
 
-		switch (read(clnt_sock, answer, sizeof(char))) {
+		switch (answer) {
 		case '1': // 로그 처리 필요
-		case '로그인':
 			login_result = login(&clnt_sock);
 			if (login_result == true)
 				return true;
 			else
 				break;
 		case '2': // 로그 처리 필요
-		case '회원가입':
 			sign_up(&clnt_sock);
 			break;
 		case '3':
-		case '종료':
-			write(clnt_sock, msg[2], sizeof(msg[2]));
-			remove_socket(clnt_sock);
+			write(clnt_sock, msg[3], sizeof(msg[3]));
+			remove_socket(&clnt_sock);
 			return false;
 		default:
-			write(clnt_sock, msg[1], sizeof(msg[1]));
+			write(clnt_sock, msg[2], sizeof(msg[2]));
 			break;
 		}
 	}
@@ -167,11 +166,13 @@ bool login(void* arg) {
 
 bool sign_up(void* arg) {
 	int clnt_sock = *((int*)arg);
-	char mode = "rw";	// needed for login_db fopen
+	char *mode = "r+";	// needed for login_db fopen
 	int str_len[3];
-	char msg[][BUF_SIZE] = { "--- 계정 생성 ---\n아이디: ", "비밀번호: "
-		, "위의 내용대로 생성하시겠습니까 (Y/N) ?"};
+	char msg[][BUF_SIZE] = { "\n=== 계정 생성 ===\n아이디: ", "비밀번호: "
+		, "위의 내용대로 생성하시겠습니까 (Y/N) ?", "이미 존재하는 아이디. 다른 아이디를 입력해주세요.: " };
 	char clnt_info[][BUF_SIZE] = { {0,}, {0,} };
+	char confirm;
+	int sign_up_result = 0;
 
 	while (1)
 	{
@@ -179,61 +180,74 @@ bool sign_up(void* arg) {
 			write(clnt_sock, msg[i], sizeof(msg[i]));
 			str_len[i] = read(clnt_sock, clnt_info[i], BUF_SIZE);
 		}
+		read(clnt_sock, &confirm, sizeof(char));
+		if (confirm=='y' || confirm=='Y') {
+			sign_up_result = rw_login_db(mode, clnt_info[0], str_len[0], clnt_info[1], str_len[1]);
 
-		// write user id/pw
-		if (rw_login_db(mode, clnt_info[0], str_len[0], clnt_info[1], str_len[1]) == true) {
-			break;
+			// write user id/pw
+			if (sign_up_result == 1) {
+				break;
+			}
+			else if (sign_up_result == 2) {
+				write(clnt_sock, msg[3], sizeof(msg[3]));
+			}
+			else {
+				error_handling("rw_login_db() error");
+			}
 		}
-		else {
-
-		}
-
 	}
-
 	return true;
 }
 
-bool rw_login_db(char *rw, char* id, int id_size, char* pw, int pw_size) {
+int rw_login_db(char *rw, char* id, int id_size, char* pw, int pw_size) {
 	FILE* fp = NULL;
-	char* buffer = NULL;
-	char* str = NULL; // needed for strtok
 	char* mode = rw;
-	char* uid = id;
-	char* upw = pw;
 	int uid_size = id_size;
 	int upw_size = pw_size;
-	bool result = false;
+	char* uid = id;
+	char* upw = pw;
+	char get_id[uid_size];
+	char get_pw[upw_size];
+	int is_duplicated_id = 0;
+	int result = 0;
 
 	pthread_mutex_lock(&login_db_mutx); // login_db.txt mutx lock
-	fp = fopen("login_db.txt", mode);
-	
-	while (buffer = fscanf(fp, "%s") != NULL) {
-		str = strtok(buffer, " ");
-		if (strncmp(str, uid, uid_size) == 0) {	// 아이디 일치
-			if (strcmp(mode, "rw")) {			// 회원가입을 위해 들어옴 아이디 중복이므로 아이디 변경 요청
+	if ((fp = fopen("login_db.txt", mode)) == NULL) {// login_db.txt open 로그 처리 필요
+		error_handling("fopen() error");
+	}
 
+	if (strcmp(mode, "r") == 0) {	// 로그인에 해당하므로 mode가 read 전용
+		while (fscanf(fp, "%s %s\n", get_id, get_pw) != EOF) {	// login_db.txt 에서 한줄씩 가져옴
+			if (strncmp(get_id, uid, uid_size) == 0) {	// 아이디 일치
+				if (strncmp(get_pw, upw, upw_size) == 0) {	// 비밀번호 일치
+					result = 1;	// true
+				}
 			}
-			str = strtok(NULL, "\n");	// str을 비밀번호로 바꿈
-			if (strncmp(str, upw, upw_size) == 0) {	// 비밀번호 일치
-				result = true;
+		}
+	}
+	else if (strcmp(mode, "r+") == 0) {	// 회원가입에 해당하므로 mode가 rw
+		while (fscanf(fp, "%s %s\n", get_id, get_pw) != EOF) {	// login_db.txt 에서 한줄씩 가져옴
+			if (strncmp(get_id, uid, uid_size) == 0) {	// 아이디 일치
+				is_duplicated_id = 1;				// 아이디 중복체크
+				result = 2;
 			}
 		}
 	}
 
-	if (mode == "a") {
+	if ((strcmp(mode, "r+") == 0) && (is_duplicated_id != 1)) {	// 아이디가 중복되지 않으면 login_db.txt에 새로운 계정 등록
 		for (int i = 0; i < uid_size; i++)	// 아이디 입력
 			fputc(uid[i], fp);
 		fputs(" ", fp);						// 비밀번호와 구분은 " " 으로
 		for (int i = 0; i < upw_size; i++)	// 비밀번호 입력
 			fputc(upw[i], fp);
 		fputs("\n", fp);
-		result = true;
+		result = 1;	// true
 	}
+	fclose(fp);							// login_db.txt close
 	pthread_mutex_unlock(&login_db_mutx); // login_db.txt mutx unlock
 	
 	return result;
 }
-
 
 // remove disconnected client
 bool remove_socket(void* arg) {
@@ -256,4 +270,3 @@ bool remove_socket(void* arg) {
 
 	return result;
 }
-
