@@ -10,33 +10,49 @@
 #define BUF_SIZE 100
 #define MAX_CLNT 256
 #define USER_ID_SIZE 21
-
-void error_handling(char* msg);
-
-// client handling thread
-void* handle_clnt(void* arg);
-
-// needed for login_view
-int login_view(void* arg);
-int login(void* arg);
-int sign_up(void* arg);
-int rw_login_db(char* mode, char* id, int id_len, char* pw, int pw_len);
-// removing socket from socket array
-int remove_socket(void* arg);
+#define ANSWER_SIZE 3
 
 typedef struct User {
-	char id[USER_ID_SIZE+1];
+	char id[USER_ID_SIZE];
 	//char pw[USER_ID_SIZE];
 	int sock;
 } User;
 
 typedef struct UserController {
-	User userList[MAX_CLNT];
+	User user_list[MAX_CLNT];
 	int cnt;
 } UserController;
 
+typedef struct Room {
+	int sock;
+	char id;
+} Room;
+
+typedef struct RoomController {
+	Room room_list[4];
+	int cnt;
+} RoomController;
+
+void error_handling(char* msg);
+
+// client handling thread
+void* handle_clnt(void* arg);
+// client enter this room and play game
+void make_rooms(int server_port);
+
+// needed for login_view
+User* login_view(void* arg);
+int login(void* arg, User* user);
+int sign_up(void* arg);
+int rw_login_db(char* mode, char* id, int id_len, char* pw, int pw_len);
+// needed for main_view
+int main_view(User* user);
+
+// removing socket from socket array
+int remove_socket(void* arg);
 
 UserController userController;
+RoomController roomController;
 pthread_mutex_t sock_mutx;
 pthread_mutex_t login_db_mutx;
 
@@ -66,22 +82,27 @@ int main(int argc, char* argv[])
 
 	userController.cnt = 0; // userController init
 
+	make_rooms(atoi(argv[1]));
+
 	while (1) {
 		clnt_adr_sz = sizeof(clnt_adr);
 		clnt_sock = accept(serv_sock, (struct sockaddr*) & clnt_adr, &clnt_adr_sz);
 
-		/*pthread_mutex_lock(&sock_mutx);
-		userController.userList[userController.cnt++].sock = clnt_sock;
-		pthread_mutex_unlock(&sock_mutx);
-
-		pthread_create(&t_id, NULL, handle_clnt, (void*)& clnt_sock);
-		pthread_detach(t_id);*/
+		//pthread_create(&t_id, NULL, handle_clnt, (void*)& clnt_sock);
+		//pthread_detach(t_id);
 		// 로그 처리 필요
 		printf("Connected client IP: %s \n", inet_ntoa(clnt_adr.sin_addr));
-		login_view(&clnt_sock);
+
+		handle_clnt(&clnt_sock);
 	}
 	close(serv_sock);
 	return 0;
+}
+
+void make_rooms(int server_port) {
+	for (int i = 0; i < 2; i++) {
+
+	}
 }
 
 void error_handling(char* msg) {
@@ -92,17 +113,24 @@ void error_handling(char* msg) {
 
 void* handle_clnt(void* arg) {
 	int clnt_sock = *((int*)arg);
+	User* user;
 
-	if (login_view(&clnt_sock) == 1)
-		//main_view(clnt_sock);
+	if ((user = login_view(&clnt_sock)) != NULL) {
+		pthread_mutex_lock(&sock_mutx);
+		userController.user_list[userController.cnt++] = *user;
+		pthread_mutex_unlock(&sock_mutx);
+
+		main_view(user);	// user에 소켓도 포함
+	}
 
 	return NULL;
 }
 
-int login_view(void* arg) {
+User* login_view(void* arg) {
 	int clnt_sock = *((int*)arg);
 	FILE* readfp = fdopen(clnt_sock, "r");
 	FILE* writefp = fdopen(clnt_sock, "w");
+	User* user = (User*)malloc(sizeof(User));
 	char msg[BUF_SIZE];
 	int answer;
 	int login_result = 0;
@@ -113,26 +141,26 @@ int login_view(void* arg) {
 
 		switch (answer) {
 		case '1':
-			login_result = login(&clnt_sock);
+			login_result = login(&clnt_sock, user);
 
 			if (login_result == 1)
-				return 1;
+				return user;	// user 정보를 반환
 			else
 				break;
 		case '2':
 			sign_up(&clnt_sock);
 			break;
 		case '3':
-			return 0;
+			return NULL;
 		default:
 			break;
 		}
 	}
 
-	return 0;	
+	return NULL;	
 }
 
-int login(void* arg) {
+int login(void* arg, User* user) {
 	int clnt_sock = *((int*)arg);
 	FILE* readfp = fdopen(clnt_sock, "r");
 	FILE* writefp = fdopen(clnt_sock, "w");
@@ -152,12 +180,16 @@ int login(void* arg) {
 	verify_result = rw_login_db(mode, uid
 		, strlen(uid), upw, strlen(upw)); // 아이디/비밀번호 확인
 
+	if (verify_result == 1) {
+		strncpy(user->id, uid, strlen(uid) - 1);	// 유저 아이디 등록
+		user->sock = clnt_sock;	// 아이디와 소켓을 맵핑하기 위해
+	}
+
 	fputc(verify_result, writefp);
 	fflush(writefp);
 
 	return verify_result;
 }
-
 
 int sign_up(void* arg) {
 	int clnt_sock = *((int*)arg);
@@ -184,6 +216,32 @@ int sign_up(void* arg) {
 	fflush(writefp);
 
 	return sign_up_result;
+}
+
+int main_view(User* user) {
+	int clnt_sock = user->sock;
+	FILE* readfp = fdopen(clnt_sock, "r");
+	FILE* writefp = fdopen(clnt_sock, "w");
+	int answer;
+
+	answer = fgetc(readfp);
+	fflush(readfp);
+
+	switch (answer) {
+	case '1':
+		
+		break;
+	case '2':
+	case '3':
+	case '4':
+	case '5':
+	case '6':
+		
+	default:
+		break;
+	}
+
+	return 0;
 }
 
 int rw_login_db(char *rw, char* id, int id_size, char* pw, int pw_size) {
