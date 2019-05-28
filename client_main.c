@@ -21,7 +21,8 @@ int login(void* arg, User* user);
 int sign_up(void* arg);
 // needed for main_view
 int main_view(void* arg, User* user);
-int auto_matching(void* arg, User* user);
+int enter_matching_room(void* arg, User* user);
+
 void* send_msg(void* arg);
 void* recv_msg(void* arg);
 void error_handling(char* msg);
@@ -95,6 +96,7 @@ User* login_view(void* arg) {
 		fgetc(stdin);	// 개행문자 없앰
 		fputc(answer, writefp);
 		fflush(writefp);
+		
 
 		switch (answer) {
 		case '1': // 로그인
@@ -222,7 +224,7 @@ int main_view(void* arg, User* user) {
 
 		switch (answer) {
 		case '1':
-			auto_matching(&sock, user);
+			enter_matching_room(&sock, user);
 			break;
 		case '2':
 		case '3':
@@ -239,20 +241,17 @@ int main_view(void* arg, User* user) {
 	return 0;
 }
 
-int auto_matching(void* arg, User* user) {
+int enter_matching_room(void* arg, User* user) {
 	int sock = *((int*)arg);
-	
-	printf("id: %s\n", user->id);
+	pthread_t snd_thread, rcv_thread;
+	void* thread_return;
 
-	/*while (1) {
-	fgets(msg, BUF_SIZE, readfp);
-	if (!strcmp(msg, ">>\n")) {
-		fputs(">> ", stdout);
-		break;
-	}
-	fputs(msg, stdout);
-	fflush(stdout);
-	}*/
+	pthread_create(&snd_thread, NULL, send_msg, (void*)&sock);
+	pthread_create(&rcv_thread, NULL, recv_msg, (void*)&sock);
+	pthread_join(snd_thread, &thread_return);
+	pthread_join(rcv_thread, &thread_return);
+
+
 
 	return 0;
 }
@@ -265,6 +264,8 @@ void* send_msg(void* arg)
 	{
 		fgets(msg, BUF_SIZE, stdin);
 		write(sock, msg, strlen(msg));
+		if (strcmp(msg, "/ready\n") == 0)
+			break;
 	}
 	return NULL;
 }
@@ -279,9 +280,8 @@ void* recv_msg(void* arg)
 		str_len = read(sock, msg, BUF_SIZE - 1);
 		if (str_len == -1)
 			return (void*)-1;
-		msg[str_len] = 0;
-		printf("%s\n", msg);
-		//fputs(msg, stdout);
+		msg[str_len] = '\0';
+		fputs(msg, stdout);
 	}
 	return NULL;
 }

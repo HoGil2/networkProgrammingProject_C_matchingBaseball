@@ -10,6 +10,8 @@
 #define BUF_SIZE 100
 #define MAX_CLNT 256
 #define USER_ID_SIZE 21
+#define MAX_ROOM 2
+#define ROOM_NAME_SIZE 21
 #define ANSWER_SIZE 3
 
 typedef struct User {
@@ -23,22 +25,42 @@ typedef struct UserController {
 	int cnt;
 } UserController;
 
+typedef struct GameController {
+	int answer_list[2][3];
+	int ready_state[2];
+	//int turn;
+} GameController;
+
+//typedef struct MessageController {
+//	char ready[BUF_SIZE];
+//	char quit[BUF_SIZE];
+//	char invite[BUF_SIZE];
+//};
+
 typedef struct Room {
-	int sock;
-	char id;
+	int id;
+	char name[ROOM_NAME_SIZE];
+	int clnt_sock[2];
+	int cnt;
+	GameController gameController;
 } Room;
 
-typedef struct RoomController {
-	Room room_list[4];
-	int cnt;
-} RoomController;
+typedef struct MatchingRoomController {
+	Room room_list[MAX_ROOM];
+	int cnt; // matching room count
+} MatchingRoomController;
+
+typedef struct CreatedRoomController {
+	Room room_list[MAX_ROOM];
+	int cnt;	// created room count
+} CreatedRoomController;
 
 void error_handling(char* msg);
 
 // client handling thread
 void* handle_clnt(void* arg);
 // client enter this room and play game
-void make_rooms(int server_port);
+void create_matching_rooms();
 
 // needed for login_view
 User* login_view(void* arg);
@@ -47,12 +69,15 @@ int sign_up(void* arg);
 int rw_login_db(char* mode, char* id, int id_len, char* pw, int pw_len);
 // needed for main_view
 int main_view(User* user);
+int enter_matching_room(User* user);
+Room* entered_Room(User* user);
 
 // removing socket from socket array
 int remove_socket(void* arg);
 
 UserController userController;
-RoomController roomController;
+MatchingRoomController mRoomController;
+CreatedRoomController cRoomController;
 pthread_mutex_t sock_mutx;
 pthread_mutex_t login_db_mutx;
 
@@ -81,8 +106,8 @@ int main(int argc, char* argv[])
 		error_handling("listen() error");
 
 	userController.cnt = 0; // userController init
-
-	make_rooms(atoi(argv[1]));
+	create_matching_rooms();	// matching room init
+	//created_matching_rooms(); 
 
 	while (1) {
 		clnt_adr_sz = sizeof(clnt_adr);
@@ -99,9 +124,22 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void make_rooms(int server_port) {
+void create_matching_rooms() {
+	char name[USER_ID_SIZE] = "matching_room";
+	mRoomController.cnt = 0;	// mRoom cnt init;
+	
 	for (int i = 0; i < 2; i++) {
+		Room* room = (Room*)malloc(sizeof(Room));
+		room->id = i + 1;
+		strcpy(room->name, name);
+		room->name[strlen(name)] = (i+1) + '0';	// int to char / "matching_room1",...
 
+		// add room at room_list in roomController
+		mRoomController.room_list[mRoomController.cnt++] = *room;
+	}
+
+	for (int i = 0; i < 2; i++) {
+		fprintf(stdout, "%s\n", mRoomController.room_list[i].id);
 	}
 }
 
@@ -115,12 +153,13 @@ void* handle_clnt(void* arg) {
 	int clnt_sock = *((int*)arg);
 	User* user;
 
-	if ((user = login_view(&clnt_sock)) != NULL) {
-		pthread_mutex_lock(&sock_mutx);
+	// 로그인 후 user를 userControl.user_list에 넣게된다.
+	if ((user = login_view(&clnt_sock)) != NULL) {	
+		pthread_mutex_lock(&sock_mutx);	// sock mutex lock
 		userController.user_list[userController.cnt++] = *user;
-		pthread_mutex_unlock(&sock_mutx);
+		pthread_mutex_unlock(&sock_mutx);	// sock mutex unlock
 
-		main_view(user);	// user에 소켓도 포함
+		main_view(user);	// main view 진입 user에 소켓도 포함
 	}
 
 	return NULL;
@@ -224,24 +263,77 @@ int main_view(User* user) {
 	FILE* writefp = fdopen(clnt_sock, "w");
 	int answer;
 
-	answer = fgetc(readfp);
-	fflush(readfp);
+	while (1) {
+		answer = fgetc(readfp);
+		fflush(readfp);
 
-	switch (answer) {
-	case '1':
-		
-		break;
-	case '2':
-	case '3':
-	case '4':
-	case '5':
-	case '6':
-		
-	default:
-		break;
+		switch (answer) {
+		case '1':
+			enter_matching_room(user);
+			break;
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+			break;
+		case '7':
+			return 0;
+		default:
+			break;
+		}
 	}
 
 	return 0;
+}
+
+int enter_matching_room(User* user) {
+	int clnt_sock = user->sock;
+	FILE* readfp = fdopen(clnt_sock, "r");
+	FILE* writefp = fdopen(clnt_sock, "w");
+	Room* room;
+	char msg[BUF_SIZE];
+
+	room = entered_Room(user);
+
+	while (room->gameController.ready_state[0] && room->gameController.ready_state[1]) {
+		// 채팅 자유롭게
+		// 동기화 필요?
+		fgets(msg, sizeof(msg), readfp);
+
+
+	}
+
+	//start_game();
+
+	return 0;
+}
+
+Room* entered_Room(User* user) {
+	int clnt_sock = user->sock;
+	Room* room;
+	int entered = 0;
+	int in_room_cnt = 0;
+
+	// be required mutex lock...
+	for (int i = 0; i < mRoomController.cnt; i++) {
+		in_room_cnt = mRoomController.room_list[i].cnt;
+		if (in_room_cnt < 2) {	// empty space in room
+			room = &mRoomController.room_list[i];
+			mRoomController.room_list[i].clnt_sock[in_room_cnt] = clnt_sock;
+			entered = 1;
+			fputs("유저 방에 입장\n", stdout);
+			break;
+			// handling?
+		}
+	}
+	// be required mutex unlock
+
+	if (entered == 1) {
+		return room;
+	}
+
+	return NULL;
 }
 
 int rw_login_db(char *rw, char* id, int id_size, char* pw, int pw_size) {
@@ -303,9 +395,9 @@ int remove_socket(void* arg) {
 
 	pthread_mutex_lock(&sock_mutx);
 	for (int i = 0; i < userController.cnt; i++){
-		if (sock == userController.userList[i].sock){
+		if (sock == userController.user_list[i].sock) {
 			while (i++ < userController.cnt - 1)
-				userController.userList[i] = userController.userList[i + 1];
+				userController.user_list[i] = userController.user_list[i + 1];
 			result = 1;
 			break;
 		}
