@@ -71,9 +71,8 @@ int main(int argc, char* argv[])
 void* clnt_view(void* arg) {
 	int sock = *((int*)arg);
 	User* user = (User*)malloc(sizeof(User));
-	int view_mode = 1;
 
-	if ((user = login_view(&sock)) == NULL) {	// 로그인 성공
+	if ((user = login_view(&sock)) != NULL) {	// 로그인 성공
 		main_view(&sock, user);
 	}
 	return NULL;
