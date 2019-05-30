@@ -21,7 +21,7 @@ typedef struct User {
 } User;
 
 typedef struct UserController {
-	User user_list[MAX_CLNT];
+	User* user_list[MAX_CLNT];
 	int cnt;
 } UserController;
 
@@ -46,12 +46,12 @@ typedef struct Room {
 } Room;
 
 typedef struct MatchingRoomController {
-	Room room_list[MAX_ROOM];
+	Room* room_list[MAX_ROOM];
 	int cnt; // matching room count
 } MatchingRoomController;
 
 typedef struct CreatedRoomController {
-	Room room_list[MAX_ROOM];
+	Room* room_list[MAX_ROOM];
 	int cnt;	// created room count
 } CreatedRoomController;
 
@@ -66,14 +66,14 @@ void create_matching_rooms();
 User* login_view(void* arg);
 int login(void* arg, User* user);
 int sign_up(void* arg);
-int rw_login_db(char* mode, char* id, int id_len, char* pw, int pw_len);
+int rw_login_db(char* mode, char* id, char* pw);
 // needed for main_view
 int main_view(User* user);
 int enter_matching_room(User* user);
 Room* entered_Room(User* user);
 
 // removing socket from socket array
-int remove_socket(void* arg);
+int remove_user(User* user);
 
 UserController userController;
 MatchingRoomController mRoomController;
@@ -107,19 +107,20 @@ int main(int argc, char* argv[])
 
 	userController.cnt = 0; // userController init
 	create_matching_rooms();	// matching room init
-	//created_matching_rooms(); 
 
 	while (1) {
 		clnt_adr_sz = sizeof(clnt_adr);
 		clnt_sock = accept(serv_sock, (struct sockaddr*) & clnt_adr, &clnt_adr_sz);
 
-		//pthread_create(&t_id, NULL, handle_clnt, (void*)& clnt_sock);
-		//pthread_detach(t_id);
+		pthread_create(&t_id, NULL, handle_clnt, (void*)& clnt_sock);
+		pthread_detach(t_id);
 		// 로그 처리 필요
 		printf("Connected client IP: %s \n", inet_ntoa(clnt_adr.sin_addr));
 
-		handle_clnt(&clnt_sock);
+		//handle_clnt(&clnt_sock);
 	}
+
+	// remove_rooms();	// room 동적할당 해제
 	close(serv_sock);
 	return 0;
 }
@@ -132,14 +133,17 @@ void create_matching_rooms() {
 		Room* room = (Room*)malloc(sizeof(Room));
 		room->id = i + 1;
 		strcpy(room->name, name);
-		room->name[strlen(name)] = (i+1) + '0';	// int to char / "matching_room1",...
+		room->name[strlen(name)] = (i + 1) + '0';	// int to char / "matching_room1",...
+
+		// room->gameControl init
+		memset(&room->gameController, 0, sizeof(room->gameController)); 
 
 		// add room at room_list in roomController
-		mRoomController.room_list[mRoomController.cnt++] = *room;
+		mRoomController.room_list[mRoomController.cnt++] = room;
 	}
 
 	for (int i = 0; i < 2; i++) {
-		fprintf(stdout, "%s\n", mRoomController.room_list[i].id);
+		//fprintf(stdout, "%s\n", mRoomController.room_list[i].name);
 	}
 }
 
@@ -155,11 +159,18 @@ void* handle_clnt(void* arg) {
 
 	// 로그인 후 user를 userControl.user_list에 넣게된다.
 	if ((user = login_view(&clnt_sock)) != NULL) {	
+		// userController userlist에 user 등록
 		pthread_mutex_lock(&sock_mutx);	// sock mutex lock
-		userController.user_list[userController.cnt++] = *user;
+		userController.user_list[userController.cnt++] = user;
 		pthread_mutex_unlock(&sock_mutx);	// sock mutex unlock
 
 		main_view(user);	// main view 진입 user에 소켓도 포함
+		
+		// 메인 종료 시 유저 등록 해제
+		remove_user(user);
+	}
+	else {
+		close(clnt_sock);
 	}
 
 	return NULL;
@@ -167,18 +178,21 @@ void* handle_clnt(void* arg) {
 
 User* login_view(void* arg) {
 	int clnt_sock = *((int*)arg);
-	FILE* readfp = fdopen(clnt_sock, "r");
-	FILE* writefp = fdopen(clnt_sock, "w");
 	User* user = (User*)malloc(sizeof(User));
 	char msg[BUF_SIZE];
-	int answer;
+	char answer[ANSWER_SIZE];
 	int login_result = 0;
+	int str_len = 0;
+
+	memset(user, 0, sizeof(user));	// user init
 
 	while (1) {
-		answer = fgetc(readfp);
-		fflush(readfp);
+		str_len = read(clnt_sock, answer, sizeof(answer));
+		if (str_len == -1) // read() error
+			return 0;
+		answer[str_len - 1] = '\0';
 
-		switch (answer) {
+		switch (answer[0]) {
 		case '1':
 			login_result = login(&clnt_sock, user);
 
@@ -201,73 +215,102 @@ User* login_view(void* arg) {
 
 int login(void* arg, User* user) {
 	int clnt_sock = *((int*)arg);
-	FILE* readfp = fdopen(clnt_sock, "r");
-	FILE* writefp = fdopen(clnt_sock, "w");
-	char* mode = "r";
-	char uid[USER_ID_SIZE];
-	char upw[USER_ID_SIZE];
+	char mode[3] = "r";
+	char uid[USER_ID_SIZE] = { 0, };
+	char upw[USER_ID_SIZE] = { 0, };
+	char answer[ANSWER_SIZE] = "0\n";
+	char msg[BUF_SIZE] = { 0, };
+	char* str;
 	int verify_result = 0;
+	int str_len = 0;
 
-	fgets(uid, sizeof(uid), readfp); // 사용자로부터 아이디 수신
-	fputs(uid, stdout);
-	fflush(readfp);
+	// 사용자로부터 아이디 비밀번호 수신
+	str_len = read(clnt_sock, msg, sizeof(msg));
+	if (str_len == -1) // read() error
+		return 0;
+	printf("str_:%d, str:%ld\n", str_len, strlen(msg));
 
-	fgets(upw, sizeof(upw), readfp); // 사용자로부터 비밀번호 수신
+	str = strtok(msg, "\n");	// "\n" 기준 앞이 아이디
+	strncpy(uid, str, strlen(str));
+	//fputs(uid, stdout);
+	fprintf(stdout, "uid: %s\n", uid);
+
+	str = strtok(NULL, "\n");	// 나머지 비밀번호
+	strncpy(upw, str, strlen(str));
 	fputs(upw, stdout);
-	fflush(readfp);
 
-	verify_result = rw_login_db(mode, uid
-		, strlen(uid), upw, strlen(upw)); // 아이디/비밀번호 확인
+	verify_result = rw_login_db(mode, uid, upw); // 아이디/비밀번호 확인
 
 	if (verify_result == 1) {
-		strncpy(user->id, uid, strlen(uid) - 1);	// 유저 아이디 등록
+		answer[0] = '1';
+		strncpy(user->id, uid, strlen(uid));	// 유저 아이디 등록
+		//printf("%s\n", user->id);
 		user->sock = clnt_sock;	// 아이디와 소켓을 맵핑하기 위해
 	}
 
-	fputc(verify_result, writefp);
-	fflush(writefp);
+	str_len = write(clnt_sock, answer, strlen(answer));
+	if (str_len == -1) // write() error
+		return 0;
 
 	return verify_result;
 }
 
 int sign_up(void* arg) {
 	int clnt_sock = *((int*)arg);
-	FILE* readfp = fdopen(clnt_sock, "r");
-	FILE* writefp = fdopen(clnt_sock, "w");
-	char *mode = "r+";	// needed for login_db fopen
-	char uid[USER_ID_SIZE];
-	char upw[USER_ID_SIZE];
+	char mode[3] = "r+";	// needed for login_db fopen
+	char uid[USER_ID_SIZE] = { 0, };
+	char upw[USER_ID_SIZE] = { 0, };
 	int sign_up_result = 0;
+	char answer[ANSWER_SIZE] = { 0, };
+	char msg[BUF_SIZE] = { 0, };
+	char* str;
+	int str_len = 0;
 
-	fgets(uid, sizeof(uid), readfp); // 사용자로부터 아이디 수신
-	fputs(uid, stdout);
-	fflush(readfp);
+	str_len = read(clnt_sock, answer, sizeof(answer));
+	if (str_len == -1) // read() error
+		return 0;
+	//printf("str_:%d, str:%ld, %s\n", str_len, strlen(answer), answer);
 
-	fgets(upw, sizeof(upw), readfp); // 사용자로부터 비밀번호 수신
-	fputs(upw, stdout);
-	fflush(readfp);
+	if (!(strcmp(answer, "y\n")) || !(strcmp(answer, "Y\n"))) {
+		str_len = read(clnt_sock, msg, sizeof(msg));
+		if (str_len == -1) // read() error
+			return 0;
+		//printf("str_:%d, str:%ld\n", str_len, strlen(upw));
 
-	// DB에서 아이디 중복 확인 및 추가, -1: fgets로 인한 개행문자 제거
-	sign_up_result = rw_login_db(mode, uid
-		, strlen(uid), upw, strlen(upw));	
+		str = strtok(msg, "\n");	// " " 기준 앞이 아이디
+		strncpy(uid, str, strlen(str));
+		fputs(uid, stdout);
 
-	fputc(sign_up_result, writefp);
-	fflush(writefp);
+		str = strtok(NULL, "\n");	// 나머지 비밀번호
+		strncpy(upw, str, strlen(str));
+		fputs(upw, stdout);
 
+		// DB에서 아이디 중복 확인 및 추가
+		sign_up_result = rw_login_db(mode, uid, upw);
+
+		if (sign_up_result == 1) {
+			answer[0] = '1';
+		}
+
+		str_len = write(clnt_sock, answer, strlen(answer));
+		if (str_len == -1) // write() error
+			return 0;
+	}
 	return sign_up_result;
 }
 
 int main_view(User* user) {
 	int clnt_sock = user->sock;
-	FILE* readfp = fdopen(clnt_sock, "r");
-	FILE* writefp = fdopen(clnt_sock, "w");
-	int answer;
+	char answer[ANSWER_SIZE] = { 0, };
+	int str_len = 0;
 
 	while (1) {
-		answer = fgetc(readfp);
-		fflush(readfp);
+		str_len = read(clnt_sock, answer, sizeof(answer));
+		if (str_len == -1) // read() error
+			return 0;
+		answer[str_len - 1] = '\0';
 
-		switch (answer) {
+		switch (answer[0]) {
 		case '1':
 			enter_matching_room(user);
 			break;
@@ -289,19 +332,44 @@ int main_view(User* user) {
 
 int enter_matching_room(User* user) {
 	int clnt_sock = user->sock;
-	FILE* readfp = fdopen(clnt_sock, "r");
-	FILE* writefp = fdopen(clnt_sock, "w");
 	Room* room;
 	char msg[BUF_SIZE];
+	int str_len = 0;
 
 	room = entered_Room(user);
+	
+	// 함수화 필요
+	while (1) {
+		while ((str_len = read(clnt_sock, msg, sizeof(msg))) != 0) {
+			//if
+			if (str_len == -1) // read() error
+				return 0;
+			msg[str_len] = '\0';
 
-	while (room->gameController.ready_state[0] && room->gameController.ready_state[1]) {
-		// 채팅 자유롭게
-		// 동기화 필요?
-		fgets(msg, sizeof(msg), readfp);
+			if (room->gameController.ready_state[0] && room->gameController.ready_state[1]) {
+				break;
+			}
 
-
+			if (room->cnt == 2) {	// 다른 사용자가 있을 시 메세지 전송
+				fprintf(stdout, "%d %d\n", room->clnt_sock[0], room->clnt_sock[1]);
+				if (clnt_sock == room->clnt_sock[0]) {
+					str_len = write(room->clnt_sock[1], msg, str_len);
+					if (str_len == -1) // write() error
+						return 0;
+				}
+				else {
+					str_len = write(room->clnt_sock[0], msg, str_len);
+					if (str_len == -1) // write() error
+						return 0;
+				}
+			}
+			else {
+				fputs(msg, stdout);
+				if (str_len == -1) // write() error
+					return 0;
+			}
+		}
+		break;
 	}
 
 	//start_game();
@@ -317,12 +385,13 @@ Room* entered_Room(User* user) {
 
 	// be required mutex lock...
 	for (int i = 0; i < mRoomController.cnt; i++) {
-		in_room_cnt = mRoomController.room_list[i].cnt;
+		in_room_cnt = mRoomController.room_list[i]->cnt;
 		if (in_room_cnt < 2) {	// empty space in room
-			room = &mRoomController.room_list[i];
-			mRoomController.room_list[i].clnt_sock[in_room_cnt] = clnt_sock;
+			room = mRoomController.room_list[i];
+			mRoomController.room_list[i]->clnt_sock[in_room_cnt] = clnt_sock;
 			entered = 1;
-			fputs("유저 방에 입장\n", stdout);
+			room->cnt++;
+			fprintf(stdout, "유저 방에 입장 %d %d\n", in_room_cnt, room->cnt);
 			break;
 			// handling?
 		}
@@ -330,56 +399,55 @@ Room* entered_Room(User* user) {
 	// be required mutex unlock
 
 	if (entered == 1) {
+		fputs("check\n", stdout);
 		return room;
 	}
 
 	return NULL;
 }
 
-int rw_login_db(char *rw, char* id, int id_size, char* pw, int pw_size) {
+int rw_login_db(char *rw, char* id, char* pw) {
 	FILE* fp = NULL;
-	char* mode = rw;
-	int uid_size = id_size;
-	int upw_size = pw_size;
-	char uid[uid_size];
-	char upw[upw_size];
-	char get_id[uid_size];
-	char get_pw[upw_size];
+	char mode[3];
+	char uid[USER_ID_SIZE] = { 0, };
+	char upw[USER_ID_SIZE] = { 0, };
+	char get_id[USER_ID_SIZE] = { 0, };
+	char get_pw[USER_ID_SIZE] = { 0, };
 	int is_duplicated_id = 0;
 	int result = 0;
 
-	memcpy(uid, id, strlen(id) - 1);
-	memcpy(upw, pw, strlen(pw) - 1);
+	memcpy(mode, rw, strlen(rw));
+	memcpy(uid, id, strlen(id));
+	memcpy(upw, pw, strlen(pw));
+	//fprintf(stdout, "%s %s %s\n", mode, uid, upw);
 
 	pthread_mutex_lock(&login_db_mutx); // login_db.txt mutx lock
 	// login_db.txt open 로그 처리 필요
 	if ((fp = fopen("login_db.txt", mode)) == NULL) {
 		error_handling("fopen() error");
 	}
-
-	if (strcmp(mode, "r") == 0) {	// 로그인에 해당하므로 mode가 read 전용
+	if (strncmp(mode, "r", strlen(mode)) == 0) {	// 로그인에 해당하므로 mode가 read 전용
 		// login_db.txt 에서 한줄씩 가져옴 "id pw\n"
 		while (fscanf(fp, "%s %s\n", get_id, get_pw) != EOF) {
-			printf("%s %s\n", get_id, get_pw);
-			if (strcmp(uid, get_id) == 0) {	// 아이디 일치
-				if (strcmp(upw, get_pw) == 0) {	// 비밀번호 일치
+			if (strncmp(uid, get_id, strlen(uid)) == 0) {	// 아이디 일치
+				if (strncmp(upw, get_pw, strlen(upw)) == 0) {	// 비밀번호 일치
 					result = 1;	// true
 				}
 			}
 		}
 	}
-	else if (strcmp(mode, "r+") == 0) {	// 회원가입에 해당하므로 mode가 rw
+	else if (strncmp(mode, "r+", strlen(mode)) == 0) {	// 회원가입에 해당하므로 mode가 rw
 		// login_db.txt 에서 한줄씩 가져옴
 		while (fscanf(fp, "%s %s\n", get_id, get_pw) != EOF) {	
-			if (strcmp(uid, get_id) == 0) {	// 아이디 일치
+			if (strncmp(uid, get_id, strlen(uid)) == 0) {	// 아이디 일치
 				is_duplicated_id = 1;				// 아이디 중복 체크
 			}
 		}
 	}
 
 	// 아이디가 중복되지 않으면 login_db.txt에 새로운 계정 등록
-	if ((strcmp(mode, "r+") == 0) && (is_duplicated_id != 1)) {	
-		fprintf(fp, "%s %s\n", uid, upw);
+	if (!(is_duplicated_id)) {	
+		fprintf(fp, "%s %s\n", uid, upw);	// login_db.txt.에 계정 등록
 		result = 1;	// true
 	}
 	fclose(fp);							// login_db.txt close
@@ -388,14 +456,13 @@ int rw_login_db(char *rw, char* id, int id_size, char* pw, int pw_size) {
 	return result;	// 1 or 0
 }
 
-// remove disconnected client
-int remove_socket(void* arg) {
+// remove disconnected user
+int remove_user(User* user) {
 	int result = 0;
-	int sock = *((int*)arg);
 
 	pthread_mutex_lock(&sock_mutx);
 	for (int i = 0; i < userController.cnt; i++){
-		if (sock == userController.user_list[i].sock) {
+		if (user == userController.user_list[i]) {
 			while (i++ < userController.cnt - 1)
 				userController.user_list[i] = userController.user_list[i + 1];
 			result = 1;
@@ -404,6 +471,9 @@ int remove_socket(void* arg) {
 	}
 	userController.cnt--;
 	pthread_mutex_unlock(&sock_mutx);
+
+	close(user->sock);	// 소켓 닫기
+	free(user);	// user 동적 할당 해제
 
 	return result;
 }
