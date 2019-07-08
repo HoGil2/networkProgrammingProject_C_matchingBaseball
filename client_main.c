@@ -27,14 +27,19 @@ int sign_up(void* arg);
 // needed for main_view
 int main_view(void* arg, User* user);
 int room_view(void* arg, User* user);
+int chatting(void* arg, User* user);
+int start_game(void* arg, User* user);
 int enter_matching_room(void* arg, User* user);
-int create_room(void* arg, User* user);		//¹æ ¸¸µé±â
-int enter_room(void* arg, User* user);		//¹æ µé¾î°¡±â
-int search_room(void* arg);		//¹æ ¸ñ·Ï º¸±â
-int search_user(void* arg);		//Á¢¼ÓÇÑ »ç¿ëÀÚ º¸±â
+int create_room(void* arg, User* user);      //ë°© ë§Œë“¤ê¸°
+int enter_room(void* arg, User* user);      //ë°© ë“¤ì–´ê°€ê¸°
+int search_room(void* arg);      //ë°© ëª©ë¡ ë³´ê¸°
+int search_user(void* arg);      //ì ‘ì†í•œ ì‚¬ìš©ì ë³´ê¸°
+int ranking(void* arg);
 void* send_msg(void* multiple_arg);
 void* recv_msg(void* arg);
 void error_handling(char* msg);
+
+int game = 0;
 
 int main(int argc, char* argv[])
 {
@@ -60,45 +65,42 @@ int main(int argc, char* argv[])
 
 	clnt_view(&sock);
 
-	/*pthread_create(&snd_thread, NULL, send_msg, (void*)&sock);
-	pthread_create(&rcv_thread, NULL, recv_msg, (void*)&sock);
-	pthread_join(snd_thread, &thread_return);
-	pthread_join(rcv_thread, &thread_return);*/
 	close(sock);
 	return 0;
 }
 
 void* clnt_view(void* arg) {
 	int sock = *((int*)arg);
+	int end = 1;
 	User* user = (User*)malloc(sizeof(User));
-
-	if ((user = login_view(&sock)) != NULL) {	// ·Î±×ÀÎ ¼º°ø
-		main_view(&sock, user);
+	system("clear");
+	if ((user = login_view(&sock)) != NULL) {   // ë¡œê·¸ì¸ ì„±ê³µ
+		while (end == 1) {
+			end = main_view(&sock, user);
+		}
 	}
 	return NULL;
 }
 
-// Á¢¼Ó ½Ã Ã¹ È­¸éÀ¸·Î ·Î±×ÀÎ¸¦ À§ÇÑ ºä
+// ì ‘ì† ì‹œ ì²« í™”ë©´ìœ¼ë¡œ ë¡œê·¸ì¸ë¥¼ ìœ„í•œ ë·°
 User* login_view(void* arg) {
 	int sock = *((int*)arg);
-	//FILE* readfp = fdopen(sock, "r");
-	//FILE* writefp = fdopen(sock, "w");
 	User* user = (User*)malloc(sizeof(User));
 	char msg[BUF_SIZE];
 	char answer[ANSWER_SIZE];
 	int login_result = 0;
 
 	while (1) {
-		fputs("* * * * * * * * * * *\n", stdout);
-		fputs("*                   *\n", stdout);
-		fputs("*  ´ÙÀÚ°£ ¼ıÀÚ¾ß±¸  *\n", stdout);
-		fputs("*                   *\n", stdout);
-		fputs("* * * * * * * * * * *\n", stdout);
-		fputs("\n=== ¸Ş ´º ===\n", stdout);
-		fputs("\n1. ·Î±×ÀÎ\n", stdout);
-		fputs("\n2. °èÁ¤ »ı¼º\n", stdout);
-		fputs("\n3. Á¾ ·á\n", stdout);
-		fputs("\n¸Ş´º¸¦ ¼±ÅÃÇØÁÖ¼¼¿ä. (1-3). ? ", stdout);
+		fputs("\n* * * * * * * * * * * * * * * * *\n", stdout);
+		fputs("*                               *\n", stdout);
+		fputs("*        ë‹¤ìê°„ ìˆ«ìì•¼êµ¬        *\n", stdout);
+		fputs("*                               *\n", stdout);
+		fputs("* * * * * * * * * * * * * * * * *\n", stdout);
+		fputs("\n\n=== ë©” ë‰´ ===\n", stdout);
+		fputs("\n1. ë¡œê·¸ì¸\n", stdout);
+		fputs("\n2. ê³„ì • ìƒì„±\n", stdout);
+		fputs("\n3. ì¢… ë£Œ\n", stdout);
+		fputs("\në©”ë‰´ë¥¼ ì„ íƒí•´ì£¼ì„¸ìš”. (1-3). ? ", stdout);
 		fflush(stdout);
 
 		fgets(answer, sizeof(answer), stdin);
@@ -106,22 +108,23 @@ User* login_view(void* arg) {
 		fflush(stdin);
 
 		switch (answer[0]) {
-		case '1': // ·Î±×ÀÎ
-			login_result = login(&sock, user);	// ·Î±×ÀÎ °á°ú
+		case '1': // ë¡œê·¸ì¸
+			login_result = login(&sock, user);   // ë¡œê·¸ì¸ ê²°ê³¼
 
-			if (login_result == 1) {	// ·Î±×ÀÎ ¼º°ø
+			if (login_result == 1) {   // ë¡œê·¸ì¸ ì„±ê³µ
 				return user;
 			}
-			else	// ·Î±×ÀÎ ½ÇÆĞ
+			else   // ë¡œê·¸ì¸ ì‹¤íŒ¨
 				break;
-		case '2': // °èÁ¤ »ı¼º
+		case '2': // ê³„ì • ìƒì„±
 			sign_up(&sock);
 			break;
 		case '3':
-			fputs("\n¿¬°áÀÌ Á¾·áµË´Ï´Ù.\n", stdout);
-			return NULL;	// Á¾·á ¿äÃ»
+			fputs("\nì—°ê²°ì´ ì¢…ë£Œë©ë‹ˆë‹¤.\n", stdout);
+			return NULL;   // ì¢…ë£Œ ìš”ì²­
 		default:
-			fputs("\nº¸±â Áß ÀÔ·ÂÇØÁÖ¼¼¿ä. (1-3) ? \n", stdout);
+			system("clear");
+			fputs("\në³´ê¸° ì¤‘ ì…ë ¥í•´ì£¼ì„¸ìš”. (1-3) ? \n", stdout);
 			break;
 		}
 	}
@@ -129,42 +132,51 @@ User* login_view(void* arg) {
 	return NULL;
 }
 
-// ·Î±×ÀÎÀ» À§ÇØ ¾ÆÀÌµğ/ºñ¹Ğ¹øÈ£¸¦ »ç¿ëÀÚ·ÎºÎÅÍ ÀÔ·Â¹ŞÀ½
-int login(void* arg, User * user) {
+// ë¡œê·¸ì¸ì„ ìœ„í•´ ì•„ì´ë””/ë¹„ë°€ë²ˆí˜¸ë¥¼ ì‚¬ìš©ìë¡œë¶€í„° ì…ë ¥ë°›ìŒ
+int login(void* arg, User* user) {
 	int sock = *((int*)arg);
 	int id_len = USER_ID_SIZE, pw_len = USER_ID_SIZE;
 	char id[id_len + 1], pw[pw_len + 1];
 	char msg[BUF_SIZE];
 	char answer[ANSWER_SIZE];
 	int login_result = 0;
+	system("clear");
+	fputs("\n* * * * * * * * * * * * * * * * *\n", stdout);
+	fputs("*                               *\n", stdout);
+	fputs("*        ë‹¤ìê°„ ìˆ«ìì•¼êµ¬        *\n", stdout);
+	fputs("*                               *\n", stdout);
+	fputs("* * * * * * * * * * * * * * * * *\n", stdout);
+	fputs("\n\n--- ë¡œê·¸ì¸ ---\n", stdout);
 
-	fputs("\n--- ·Î±×ÀÎ ---\n", stdout);
+	fputs("\nì•„ì´ë”” : ", stdout);
+	fgets(id, sizeof(id), stdin); // ì•„ì´ë”” ì…ë ¥
 
-	fputs("\n¾ÆÀÌµğ : ", stdout);
-	fgets(id, sizeof(id), stdin); // ¾ÆÀÌµğ ÀÔ·Â
-	//fflush(stdin);
+	fputs("\në¹„ë°€ë²ˆí˜¸ : ", stdout);
+	fgets(pw, sizeof(pw), stdin); // ë¹„ë°€ë²ˆí˜¸ ì…ë ¥
 
-	fputs("\nºñ¹Ğ¹øÈ£ : ", stdout);
-	fgets(pw, sizeof(pw), stdin); // ºñ¹Ğ¹øÈ£ ÀÔ·Â
-	//fflush(stdin);
 	sprintf(msg, "%s%s", id, pw);
 	write(sock, msg, sizeof(msg));
-	printf("·Î±×ÀÎÁß...\n");
+
+	system("clear");
+	printf("ë¡œê·¸ì¸ì¤‘...\n");
 	sleep(0.5);
 	read(sock, answer, sizeof(answer));
-	if ((answer[0]) == '1') {	// ·Î±×ÀÎ ¼º°ø
+	if ((answer[0]) == '1') {   // ë¡œê·¸ì¸ ì„±ê³µ
 		strncpy(user->id, id, strlen(id) - 1);
-		fputs("\n·Î±×ÀÎ ¼º°ø!\n", stdout);
+		fputs("\në¡œê·¸ì¸ ì„±ê³µ!\n", stdout);
 		login_result = 1;
 	}
+	else if (strcmp(answer, "2\n") == 0) {
+		fputs("\nì´ë¯¸ ì ‘ì†ì¤‘ì¸ ì•„ì´ë”” ì…ë‹ˆë‹¤!\n", stdout);
+	}
 	else {
-		fputs("\n¾ÆÀÌµğ/ºñ¹Ğ¹øÈ£¸¦ È®ÀÎÇØÁÖ¼¼¿ä.\n", stdout);
+		fputs("\nì•„ì´ë””/ë¹„ë°€ë²ˆí˜¸ë¥¼ í™•ì¸í•´ì£¼ì„¸ìš”.\n", stdout);
 	}
 
-	return login_result;	// 1 or 0
+	return login_result;   // 1 or 0
 }
 
-// È¸¿ø°¡ÀÔÀ» À§ÇØ ¾ÆÀÌµğ/ºñ¹Ğ¹øÈ£¸¦ »ç¿ëÀÚ·ÎºÎÅÍ ÀÔ·Â¹ŞÀ½
+// íšŒì›ê°€ì…ì„ ìœ„í•´ ì•„ì´ë””/ë¹„ë°€ë²ˆí˜¸ë¥¼ ì‚¬ìš©ìë¡œë¶€í„° ì…ë ¥ë°›ìŒ
 int sign_up(void* arg) {
 	int sock = *((int*)arg);
 	int id_len = USER_ID_SIZE;
@@ -172,55 +184,59 @@ int sign_up(void* arg) {
 	char id[id_len], pw[pw_len], id_pw[id_len + pw_len];
 	int sign_up_result = 0;
 	char answer[ANSWER_SIZE];
+	system("clear");
+	fputs("\n* * * * * * * * * * * * * * * * *\n", stdout);
+	fputs("*                               *\n", stdout);
+	fputs("*        ë‹¤ìê°„ ìˆ«ìì•¼êµ¬        *\n", stdout);
+	fputs("*                               *\n", stdout);
+	fputs("* * * * * * * * * * * * * * * * *\n", stdout);
+	fputs("\n\n--- ê³„ì •ìƒì„± ---\n", stdout);
 
-	fputs("\n--- °èÁ¤»ı¼º ---\n", stdout);
-
-	fputs("\n¾ÆÀÌµğ : ", stdout);
+	fputs("\nì•„ì´ë”” : ", stdout);
 	fgets(id, sizeof(id), stdin);
-	//fflush(stdin);	// ÀÔ·Â¹öÆÛ ÃÊ±âÈ­
 
-	fputs("\nºñ¹Ğ¹øÈ£ : ", stdout);
+	fputs("\në¹„ë°€ë²ˆí˜¸ : ", stdout);
 	fgets(pw, sizeof(pw), stdin);
-	//fflush(stdin);	// ÀÔ·Â¹öÆÛ ÃÊ±âÈ­
-	fputs("\nÀ§ÀÇ ³»¿ë´ë·Î »ı¼ºÇÏ½Ã°Ú½À´Ï±î (Y/N) ? ", stdout);
+
+	fputs("\nìœ„ì˜ ë‚´ìš©ëŒ€ë¡œ ìƒì„±í•˜ì‹œê² ìŠµë‹ˆê¹Œ (Y/N) ? ", stdout);
 	fgets(answer, sizeof(answer), stdin);
+	system("clear");
 
 	if (strcmp(answer, "Y\n") || strcmp(answer, "y\n")) {
 		sprintf(id_pw, "%s%s", id, pw);
-		write(sock, id_pw, sizeof(id_pw));
-		printf("°èÁ¤ »ı¼ºÁß...\n");
-		sleep(0.5);
+		write(sock, id_pw, strlen(id_pw));
+		printf("ê³„ì • ìƒì„±ì¤‘...\n");
 		read(sock, answer, sizeof(answer));
-		if ((answer[0]) == 1) {	// °èÁ¤»ı¼º ¼º°ø
-			fputs("\n°èÁ¤»ı¼º ¼º°ø!\n", stdout);
+		if ((answer[0]) == '1') {   // ê³„ì •ìƒì„± ì„±ê³µ
+			fputs("\nê³„ì •ìƒì„± ì„±ê³µ!\n", stdout);
 			sign_up_result = 1;
 		}
 		else {
-			fputs("\nÀÌ¹Ì Á¸ÀçÇÏ´Â ¾ÆÀÌµğÀÔ´Ï´Ù.\n", stdout);
+			fputs("\nì´ë¯¸ ì¡´ì¬í•˜ëŠ” ì•„ì´ë””ì…ë‹ˆë‹¤.\n", stdout);
 		}
 	}
 
 	return sign_up_result;
 }
 
-int main_view(void* arg, User * user) {
-	int sock = *((int*)arg);
-	char answer[ANSWER_SIZE];
 
-	fprintf(stdout, "\n%s ´Ô È¯¿µÇÕ´Ï´Ù!\n", user->id);
+
+int main_view(void* arg, User* user) {
+	int sock = *((int*)arg);
+	static int stat = 0;
+	char answer[ANSWER_SIZE];
+	char msg[] = "\n = = = ë©”  ë‰´ = = =\n1. ë§¤ì¹­ìœ¼ë¡œ ê²Œì„ ì‹œì‘í•˜ê¸°\n2. ë°© ìƒì„±í•˜ê¸°\n3. ë°© ì°¸ê°€í•˜ê¸°\n4. ì…ì¥ ê°€ëŠ¥í•œ ë°© ì¡°íšŒ\n5. í˜„ì¬ ì‚¬ìš©ì ì¡°íšŒ\n6. ë­í‚¹ ì¡°íšŒ\n7. ë¡œê·¸ì•„ì›ƒ\n0. ë„ì›€ë§\n";
+	fputs("\n* * * * * * * * * * * * * * * * *\n", stdout);
+	fputs("*                               *\n", stdout);
+	fputs("*        ë‹¤ìê°„ ìˆ«ìì•¼êµ¬        *\n", stdout);
+	fputs("*                               *\n", stdout);
+	fputs("* * * * * * * * * * * * * * * * *\n", stdout);
+	if (stat++ == 0) printf("\n%s ë‹˜ í™˜ì˜í•©ë‹ˆë‹¤!\n", user->id);
+	printf("%s", msg);
 
 	while (1) {
-		fputs("\n=== ¸Ş ´º ===\n", stdout);
-		fputs("\n1. ¸ÅÄªÀ¸·Î °ÔÀÓ ½ÃÀÛÇÏ±â\n", stdout);
-		fputs("\n2. ¹æ »ı¼ºÇÏ±â\n", stdout);
-		fputs("\n3. ¹æ Âü°¡ÇÏ±â\n", stdout);
-		fputs("\n4. ÀÔÀå °¡´ÉÇÑ ¹æ Á¶È¸\n", stdout);
-		fputs("\n5. ÇöÀç »ç¿ëÀÚ Á¶È¸\n", stdout);
-		fputs("\n6. ·©Å· Á¶È¸\n", stdout);
-		fputs("\n7. ·Î±×¾Æ¿ô\n", stdout);
-		fputs("\n¸Ş´º¸¦ ¼±ÅÃÇØÁÖ¼¼¿ä (1-6) ? ", stdout);
-		fflush(stdout);
-
+		fputs("\në©”ë‰´ë¥¼ ì„ íƒí•´ì£¼ì„¸ìš”. (0-7)\n", stdout);
+		printf("%s > ", user->id);
 		fgets(answer, sizeof(answer), stdin);
 		write(sock, answer, sizeof(answer));
 		fflush(stdin);
@@ -228,13 +244,13 @@ int main_view(void* arg, User * user) {
 		switch (answer[0]) {
 		case '1':
 			enter_matching_room(&sock, user);
-			break;
+			return 1;
 		case '2':
 			create_room(&sock, user);
-			break;
+			return 1;
 		case '3':
 			enter_room(&sock, user);
-			break;
+			return 1;
 		case '4':
 			search_room(&sock);
 			break;
@@ -242,155 +258,195 @@ int main_view(void* arg, User * user) {
 			search_user(&sock);
 			break;
 		case '6':
+			ranking(&sock);
 			break;
 		case '7':
-			printf("Á¢¼ÓÀ» Á¾·áÇÕ´Ï´Ù.\n\n");
+			printf("ì ‘ì†ì„ ì¢…ë£Œí•©ë‹ˆë‹¤.\n\n");
 			return 0;
+		case '0':
+			system("clear");
+			fputs("\n* * * * * * * * * * * * * * * * *\n", stdout);
+			fputs("*                               *\n", stdout);
+			fputs("*        ë‹¤ìê°„ ìˆ«ìì•¼êµ¬        *\n", stdout);
+			fputs("*                               *\n", stdout);
+			fputs("* * * * * * * * * * * * * * * * *\n", stdout);
+			printf("%s", msg);
 		default:
-			fputs("\nº¸±â Áß ÀÔ·ÂÇØÁÖ¼¼¿ä. (1-6) ? \n", stdout);
 			break;
 		}
 	}
-
-	return 0;
+	return 1;
 }
 
-int enter_user_room(void* arg, User * user) {
+int enter_matching_room(void* arg, User* user) {
 	int sock = *((int*)arg);
-	int str_len = 0;
-	char msg[BUF_SIZE] = { 0, };
 
-
-
-}
-
-int enter_matching_room(void* arg, User * user) {
-	int sock = *((int*)arg);
-	pthread_t snd_thread, rcv_thread;
-	void* thread_return;
-	MultipleArg* multiple_arg;
-
-	multiple_arg = (MultipleArg*)malloc(sizeof(MultipleArg)); // init
-	multiple_arg->sock = sock;
-	memcpy(multiple_arg->id, user->id, strlen(user->id));
-
-	pthread_create(&snd_thread, NULL, send_msg, (void*)multiple_arg);
-	pthread_create(&rcv_thread, NULL, recv_msg, (void*)& sock);
-	pthread_join(snd_thread, &thread_return);
-	pthread_join(rcv_thread, &thread_return);
-
-	return 0;
-}
-
-int create_room(void* arg, User * user) {		//¹æ »ı¼º
-	int sock = *(int*)arg;
-	char name[21];
-	fputs("\n»ı¼ºÇÒ ¹æ ÀÌ¸§ : ", stdout);
-	fgets(name, sizeof(name), stdin);
-	write(sock, name, sizeof(name));
-
+	system("clear");
+	printf("ë§¤ì¹­ë°© ì…ì¥\n");
 	room_view(&sock, user);
 
 	return 0;
 }
 
-int enter_room(void* arg, User * user) {		//
+int create_room(void* arg, User* user) {      //ë°© ìƒì„±
+	int sock = *(int*)arg;
+	char name[21];
+	int str_len = 0;
+	fputs("\nìƒì„±í•  ë°© ì´ë¦„ : ", stdout);
+	fgets(name, sizeof(name), stdin);
+	name[strlen(name)] = 0;
+	system("clear");
+	printf("ë°© ìƒì„±ì¤‘... -> %s", name);
+	str_len = write(sock, name, sizeof(name));
+	if (str_len == -1)
+		return 0;
+
+	printf("ìƒì„± ì„±ê³µ\n");
+	room_view(&sock, user);
+
+	return 0;
+}
+
+int enter_room(void* arg, User* user) {
 	int sock = *(int*)arg;
 	char name[21];
 	char msg[BUF_SIZE];
 	char answer[ANSWER_SIZE];
 	int str_len = 0;
 
-	fputs("\nÀÔÀåÇÒ ¹æ ¹øÈ£¸¦ ÀÔ·ÂÇØÁÖ¼¼¿ä. ", stdout);
+	fputs("\nì…ì¥í•  ë°©ì˜ ë²ˆí˜¸ ë˜ëŠ” ì´ë¦„ì„ ì…ë ¥í•´ì£¼ì„¸ìš”. ", stdout);
 	fgets(name, sizeof(name), stdin);
-	str_len = write(sock, name, strlen(name));
+	str_len = write(sock, name, sizeof(name));
 	if (str_len == -1)
 		return 0;
 
-	printf("%s(À¸)·Î ÀÔÀåÁß... ", name);
+	system("clear");
+	printf("ë°© ì…ì¥ì¤‘... -> %s", name);
 
-	read(sock, answer, sizeof(answer));	// ÀÔÀå °á°ú ¼ö½Å
+	read(sock, answer, sizeof(answer));   // ì…ì¥ ê²°ê³¼ ìˆ˜ì‹ 
 
-	if (!strcmp(msg, "1")) {
-		printf("\nÀÔÀå ½ÇÆĞ\n");
+	if (strcmp(answer, "1\n") == 0) {   // ë°© ì…ì¥
+		printf(" ì…ì¥ ì„±ê³µ!\n");
+		room_view(&sock, user);
 	}
-	else {
-		printf("\nÀÔÀå ¼º°ø\n");
-		room_view(&sock, user);	// ÀÔÀå
+	else {      // ë¡œë¹„ë¡œ
+		printf(" ì…ì¥ ì‹¤íŒ¨!\n");
 	}
 	return 0;
 }
 
-int search_room(void* arg) {		//·ë id name Ãâ·Â
+int search_room(void* arg) {      // ë°© id name ì¶œë ¥
+	int sock = *(int*)arg;
+	char msg[1000];
+	int str_len = 0;
+
+	fputs("\në°© ì¡°íšŒ\n", stdout);
+	str_len = read(sock, msg, sizeof(msg));      // ë°© ëª©ë¡ ì½ê¸°
+	if (str_len == -1)   // read() error
+		return 0;
+	msg[str_len] = 0;
+	fputs(msg, stdout);
+	return 0;
+}
+
+int search_user(void* arg) {   // ì ‘ì†ì¤‘ì¸ ì‚¬ìš©ì ì¡°íšŒ
+	int sock = *(int*)arg;
+	char msg[1000];
+	int str_len = 0;
+
+	printf("\nì‚¬ìš©ì ì¡°íšŒ\n");
+	str_len = read(sock, msg, sizeof(msg));      // ì‚¬ìš©ì ëª©ë¡ ì½ê¸°
+	if (str_len == -1)   // read() error
+		return 0;
+
+	msg[str_len] = 0;
+	fputs(msg, stdout);
+	return 0;
+}
+
+int ranking(void* arg) {
 	int sock = *(int*)arg;
 	char msg[1000];
 
-	fputs("\n¹æ Á¶È¸\n", stdout);
+	fputs("\në­í‚¹ì¡°íšŒ\n", stdout);
+	fputs(" ë­í‚¹            ID     ìŠ¹ë¦¬  ë¬´ìŠ¹ë¶€  íŒ¨ë°°\n", stdout);
+	fputs("", stdout);
 	read(sock, msg, sizeof(msg) - 1);
 	fputs(msg, stdout);
 	return 0;
 }
 
-int search_user(void* arg) {	// Á¢¼ÓÁßÀÎ »ç¿ëÀÚ Á¶È¸
-	int sock = *(int*)arg;
-	char msg[1000];
 
-	fputs("\n»ç¿ëÀÚ Á¶È¸\n", stdout);
-	read(sock, msg, sizeof(msg) - 1);
-	fputs(msg, stdout);
-	return 0;
-}
+int room_view(void* arg, User* user) { //
+	int sock = *((int*)arg);
 
-int room_view(void* arg, User * user) { //¹Ì¿Ï
-	MultipleArg player;
-	player.sock = *(int*)arg;
-	strcpy(player.id, user->id);
-	char msg[BUF_SIZE];
-	pthread_t rd, wr;
-	void* thread_return;
-
-	printf("¹æ ÀÔÀå\n%s :", user->id);
-	pthread_create(&rd, NULL, recv_msg, (void*)& player);
-	pthread_create(&wr, NULL, send_msg, (void*)& player);
-	pthread_join(wr, &thread_return);
-	pthread_join(rd, &thread_return);
-	/*
-	while (1) {
-		fgets(msg, sizeof(msg), stdin);
-		if (strcmp(msg, "q\n") || strcmp(msg, "Q\n")) {
-			write(sock, "0", sizeof("0"));
-			break;
-		}
-		else if (strcmp(msg, "r\n") || strcmp(msg, "R\n")) {
-			write(sock, "1", sizeof("1"));
-		}
-		else {
-			fputs(msg, stdout);
-		}
+	while ((chatting(&sock, user)) == 1) {
+		start_game(&sock, user);
 	}
-	*/
-	printf("¹æ ÅğÀå\n");
+
+	printf("ë°© í‡´ì¥\n");
 	return 0;
 }
 
+
+int chatting(void* arg, User* user) {
+	int sock = *((int*)arg);
+	pthread_t snd_thread, rcv_thread;
+	void* rcv_thread_return, *snd_thread_return;
+	MultipleArg* multiple_arg;
+
+	multiple_arg = (MultipleArg*)malloc(sizeof(MultipleArg)); // init
+	multiple_arg->sock = sock;
+	memcpy(multiple_arg->id, user->id, strlen(user->id));
+
+	printf("ì±„íŒ…ì‹œì‘\n");
+
+	pthread_create(&snd_thread, NULL, send_msg, (void*)multiple_arg);
+	pthread_create(&rcv_thread, NULL, recv_msg, (void*)& sock);
+	pthread_join(snd_thread, &snd_thread_return);
+	pthread_join(rcv_thread, &rcv_thread_return);
+
+	printf("ì±„íŒ…ì¢…ë£Œ\n");
+
+	if ((int*)snd_thread_return && (int*)rcv_thread_return) {
+		return 1;
+	}
+
+	return 0;
+}
 
 void* send_msg(void* multiple_arg)
 {
 	MultipleArg mArg = *((MultipleArg*)multiple_arg);
+	char start_msg[100];
 	char msg[BUF_SIZE];
 	char name_msg[USER_ID_SIZE + BUF_SIZE];
 	char uid[USER_ID_SIZE];
 
-	strncpy(uid, mArg.id, sizeof(mArg.id)); // id º¹»ç
+	strncpy(uid, mArg.id, sizeof(mArg.id)); // id ë³µì‚¬
+	sprintf(start_msg, "%së‹˜ì´ ì…ì¥í•˜ì˜€ìŠµë‹ˆë‹¤.\n", mArg.id);
+	write(mArg.sock, start_msg, sizeof(start_msg));
 
 	while (1)
 	{
 		fgets(msg, sizeof(msg), stdin);
 		sprintf(name_msg, "%s: %s", uid, msg);
-		write(mArg.sock, name_msg, strlen(name_msg));
-		if (!strcmp(msg, "/q\n") || !strcmp(msg, "Q\n")) {
-
-			break;
+		if (msg[0] == '/') {
+			if (strcmp(msg, "/q\n") == 0) {
+				write(mArg.sock, msg, strlen(msg));
+				return 0;
+			}
+			else if (strcmp(msg, "/r\n") == 0) {
+				write(mArg.sock, msg, strlen(msg));
+				printf("ì¤€ë¹„ë˜ì—ˆìŠµë‹ˆë‹¤.\n");
+				return 1;
+			}
+			else if (strcmp(msg, "/?\n") == 0) {
+				write(mArg.sock, msg, strlen(msg));
+			}
+		}
+		else {
+			write(mArg.sock, name_msg, strlen(name_msg));
 		}
 	}
 	return NULL;
@@ -400,16 +456,110 @@ void* recv_msg(void* arg)
 {
 	MultipleArg mArg = *((MultipleArg*)arg);
 	char name_msg[USER_ID_SIZE + BUF_SIZE];
-	int str_len;
+	int str_len = 0;
+
 	while (1)
 	{
 		str_len = read(mArg.sock, name_msg, USER_ID_SIZE + BUF_SIZE);
 		if (str_len == -1)
 			return (void*)-1;
 		name_msg[str_len] = 0;
-		fputs(name_msg, stdout);
+		if (name_msg[0] == '/') {
+			if ((strncmp(name_msg, "/q\n", strlen("/q\n"))) == 0) {
+				printf("ë°©ì„ ë‚˜ê°‘ë‹ˆë‹¤.\n");
+				return 0;
+			}
+			else if (strncmp(name_msg, "/r\n", strlen("/r\n")) == 0) {
+				printf("ê²Œì„ì‹œì‘\n");
+				return 1;
+			}
+		}
+		else {
+			fputs(name_msg, stdout);
+		}
+
 	}
 	return NULL;
+}
+
+int start_game(void* arg, User* user) {
+	int sock = *((int*)arg);
+	char user_num[5];
+	char msg[BUF_SIZE];
+	char set_turn[5];
+	int str_len = 0;
+	int first = 1;
+	int turn = 1;
+	int cnt = 1;
+
+	while (1) {   // ì •ë‹µì„ ë§ì¶”ëŠ” ì‚¬ìš©ìê°€ ë‚˜ì˜¬ë•Œê¹Œì§€ ë°˜ë³µ
+		if (turn) {
+			while (1) { // ì •ìƒì ì¸ ìˆ«ìë§Œ ì…ë ¥ë°›ê¸° ìœ„í•œ ë°˜ë³µ
+				if (first == 1) {
+					fprintf(stdout, "%së‹˜ 1ë¶€í„° 9ì‚¬ì´ì˜ 3ìë¦¬ ìˆ«ìë¥¼ ì…ë ¥í•´ì£¼ì„¸ìš”. (ex: 123) : ", user->id);
+					first--;
+				}
+				else {
+					printf("ê³µê²©í•  ìˆ«ìë¥¼ ì…ë ¥í•´ì£¼ì„¸ìš” : ");
+				}
+				fgets(user_num, sizeof(user_num), stdin);
+				if (user_num[0] < '1' || user_num[0] > '9' || user_num[1] < '1' || user_num[1] > '9' || user_num[2] < '1' || user_num[2] > '9')
+				{ // ì…ë ¥í•œ ìˆ«ìê°€ 1 ~ 9 ìˆ«ìê°€ ì•„ë‹ˆë©´ ë‹¤ì‹œ ì…ë ¥ë°›ë„ë¡ 
+					printf("ë²”ìœ„ ì™¸ì˜ ìˆ«ìë¥¼ ì…ë ¥í•˜ì‹œë©´ ì•ˆë©ë‹ˆë‹¤.\n");
+					continue;
+				}
+				else if (user_num[0] == user_num[1] || user_num[0] == user_num[2] || user_num[1] == user_num[2])
+				{ // ì…ë ¥í•œ ìˆ«ì ì¤‘ì— ì¤‘ë³µëœ ê²Œ ìˆìœ¼ë©´ ë‹¤ì‹œ ì…ë ¥ë°›ë„ë¡ 
+					printf("ì¤‘ë³µëœ ìˆ«ìë¥¼ ì…ë ¥í•˜ì‹œë©´ ì•ˆë©ë‹ˆë‹¤.\n");
+					continue;
+				}
+				break; // ì•„ë¬´ ë¬¸ì œ ì—†ì„ ê²½ìš° ë°˜ë³µ ì¢…ë£Œ 
+			}
+			write(sock, user_num, strlen(user_num));
+			turn = !turn;
+		}
+
+		while (1) {
+			if (!(str_len = read(sock, msg, sizeof(msg) - 1)))
+				break;
+
+			msg[str_len] = '\0';
+			if (msg[0] == '/') {
+				if (strncmp(msg, "/win\n", strlen("/win\n")) == 0) {
+					printf("\nìŠ¹ë¦¬í•˜ì…¨ìŠµë‹ˆë‹¤!!\n");
+					return 0;
+				}
+				else if (strncmp(msg, "/draw\n", strlen("/draw\n")) == 0) {
+					printf("\në¹„ê²¼ìŠµë‹ˆë‹¤!!\n");
+					return 0;
+				}
+				else if (strncmp(msg, "/lose\n", strlen("/lose\n")) == 0) {
+					printf("\níŒ¨ë°°í•˜ì…¨ìŠµë‹ˆë‹¤!!\n");
+					return 0;
+				}
+				else if (strncmp(msg, "/turn1\n", strlen("/turn1\n")) == 0) {
+					turn = 1;
+					printf("\nê³µê²© %díšŒì´ˆ\n", cnt);
+					cnt++;
+					break;
+				}
+				else if (strncmp(msg, "/turn2\n", strlen("/turn2\n")) == 0) {
+					turn = 1;
+					printf("\nê³µê²© %díšŒë§\n", cnt);
+					cnt++;
+					break;
+				}
+			}
+			else if (msg[0] == '\n') {
+				fputs(msg, stdout);
+				write(sock, "\n", strlen("\n"));
+				break;
+			}
+			fputs(msg, stdout);
+		}
+	}
+
+	return 0;
 }
 
 void error_handling(char* msg)
